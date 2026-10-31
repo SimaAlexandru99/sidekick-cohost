@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sidekick — stream co-host</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: transparent; color: #f7f6ff; }
+    .overlay { position: fixed; left: 24px; bottom: 24px; width: min(620px, calc(100vw - 48px)); }
+    #card { padding: 22px 26px; border: 1px solid #ffffff24; border-left: 4px solid #b79aff;
+      border-radius: 16px; background: #11131fed; box-shadow: 0 12px 40px #0004; }
+    .brand { color: #bfa9ff; font-size: 12px; font-weight: 750; letter-spacing: .18em; }
+    #name { margin: 12px 0 6px; font-size: 16px; color: #d1cce3; overflow-wrap: anywhere; }
+    #line { margin: 0; font-size: clamp(20px, 3vw, 28px); line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+    #status { display: inline-block; margin: 10px 0 0; padding: 6px 10px; border-radius: 8px;
+      background: #11131fe8; font-size: 12px; color: #d1cce3; }
+    button { margin-top: 12px; padding: 10px 16px; border: 0; border-radius: 8px;
+      background: #c4aaff; color: #191127; font: inherit; font-weight: 650; cursor: pointer; }
+    button:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main class="overlay" aria-label="Sidekick co-host">
+    <section id="card" hidden aria-live="polite" aria-atomic="true">
+      <div class="brand">SIDEKICK</div>
+      <h1 id="name"></h1>
+      <p id="line"></p>
+    </section>
+    <p id="status" role="status">Connecting…</p>
+    <br><button id="enable" type="button" hidden>Enable audio</button>
+  </main>
+  <script>
+    const card = document.querySelector('#card');
+    const name = document.querySelector('#name');
+    const line = document.querySelector('#line');
+    const status = document.querySelector('#status');
+    const enable = document.querySelector('#enable');
+    const events = new EventSource('/events');
+    let current;
+
+    function clearPlayback() {
+      const previous = current;
+      current = undefined;
+      if (previous?.audio) {
+        previous.audio.onended = previous.audio.onerror = null;
+        previous.audio.pause();
+        previous.audio.removeAttribute('src');
+        previous.audio.load();
+      }
+      if (previous?.utterance) {
+        previous.utterance.onend = previous.utterance.onerror = null;
+        window.speechSynthesis?.cancel();
+      }
+      enable.hidden = true;
+      card.hidden = true;
+    }
+
+    async function finish(id, result) {
+      if (current?.id !== id) return;
+      clearPlayback();
+      status.textContent = result === 'ended' ? 'Sidekick · Listening' : 'Audio unavailable · Check browser voices or OBS audio';
+      try {
+        const response = await fetch(`/playback/${id}/${result}`, { method: 'POST', keepalive: true });
+        if (!response.ok) status.textContent = 'Playback expired · Waiting for the next line';
+      } catch { status.textContent = 'Connection lost · Reconnecting…'; }
+    }
+
+    function blocked(id) {
+      if (current?.id !== id) return;
+      status.textContent = 'Audio paused · Enable audio using OBS Interact';
+      enable.hidden = false;
+    }
+
+    function startPlayback() {
+      if (!current) return;
+      const playing = current;
+      enable.hidden = true;
+      status.textContent = 'Sidekick · Speaking';
+      if (playing.audio) {
+        playing.audio.play().catch(error => {
+          if (error.name === 'NotAllowedError') blocked(playing.id);
+          else void finish(playing.id, 'error');
+        });
+      } else if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+        const utterance = new SpeechSynthesisUtterance(playing.text);
+        playing.utterance = utterance;
+        utterance.onend = () => void finish(playing.id, 'ended');
+        utterance.onerror = event => {
+          if (event.error === 'not-allowed') blocked(playing.id);
+          else void finish(playing.id, 'error');
+        };
+        window.speechSynthesis.speak(utterance);
+      } else {
+        void finish(playing.id, 'error');
+      }
+    }
+
+    enable.addEventListener('click', startPlayback);
+    events.addEventListener('ready', () => { status.textContent = 'Sidekick · Listening'; });
+    events.addEventListener('busy', () => {
+      clearPlayback();
+      events.close();
+      status.textContent = 'Another overlay is connected · Close it and reload this source';
+    });
+    events.addEventListener('speech', event => {
+      clearPlayback();
+      current = JSON.parse(event.data);
+      name.textContent = current.name;
+      line.textContent = current.text;
+      card.hidden = false;
+      if (current.audioUrl) {
+        const id = current.id;
+        current.audio = new Audio(current.audioUrl);
+        current.audio.onended = () => void finish(id, 'ended');
+        current.audio.onerror = () => void finish(id, 'error');
+      }
+      startPlayback();
+    });
+    events.addEventListener('stop', event => {
+      if (current?.id === JSON.parse(event.data).id) {
+        clearPlayback();
+        status.textContent = 'Sidekick · Waiting for the next line';
+      }
+    });
+    events.onerror = () => {
+      clearPlayback();
+      status.textContent = 'Connection lost · Reconnecting…';
+    };
+    window.addEventListener('pagehide', () => { clearPlayback(); events.close(); });
+  </script>
+</body>
+</html>

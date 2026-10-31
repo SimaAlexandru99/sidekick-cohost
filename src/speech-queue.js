@@ -3,7 +3,7 @@ import { isSafeText } from './filters.js';
 const PRIORITY = { raid: 4, sub: 3, ask: 2, recap: 2, follow: 1, highlight: 0 };
 
 // play({ type, name, text, audio }, signal) resolves only when playback has ended.
-export function createSpeechQueue({ synthesize, play, onError = console.error }) {
+export function createSpeechQueue({ synthesize, play, canPlay = () => true, onError = console.error }) {
   if (typeof synthesize !== 'function' || typeof play !== 'function') {
     throw new Error('Speech queue requires synthesis and playback handlers');
   }
@@ -28,7 +28,7 @@ export function createSpeechQueue({ synthesize, play, onError = console.error })
   }
 
   function pump() {
-    if (!controller.signal.aborted && !active && !gapTimer && pending.length) {
+    if (!controller.signal.aborted && !active && !gapTimer && pending.length && canPlay()) {
       void run(pending.shift());
     }
   }
@@ -45,7 +45,8 @@ export function createSpeechQueue({ synthesize, play, onError = console.error })
       pump();
       return dropped !== entry;
     },
-    isIdle: () => !controller.signal.aborted && !active && !gapTimer && pending.length === 0,
+    isIdle: () => !controller.signal.aborted && !active && !gapTimer && pending.length === 0 && canPlay(),
+    resume: pump,
     stop() {
       controller.abort();
       clearTimeout(gapTimer);

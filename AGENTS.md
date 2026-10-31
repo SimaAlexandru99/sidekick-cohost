@@ -83,6 +83,15 @@ only when their slice needs them; ElevenLabs is always optional.
   `createTts(env)` returns MP3 bytes, or `null` without a key. `play(item, signal)`
   must resolve on actual playback completion and honor shutdown cancellation.
   Slice 3 supplies this playback consumer; slice 2 does not play audio in the terminal.
+- Slice 3 binds HTTP to `127.0.0.1:PORT`. One SSE consumer owns playback;
+  additional overlays show a busy notice. The queue waits without synthesizing
+  while disconnected. `canPlay` gates the queue and `resume()` wakes it on connect.
+- SSE sends `speech` with `{ id, name, text, audioUrl }`. MP3 bytes live in memory
+  at `/audio/{id}.mp3` only for the current utterance. The page acknowledges actual
+  completion with `POST /playback/{id}/ended` or `/error`; requests must be same-origin.
+  Disconnect, shutdown or a 60-second playback timeout cancels the current line.
+- Highlights are polled once per second, using the latest filtered candidate,
+  only with a connected idle overlay. The 90-second cooldown starts on enqueue.
 - ElevenLabs: `POST /v1/text-to-speech/{voice_id}`, configured `model_id`, MP3 output.
   Without its API key, send text only; the overlay uses browser `speechSynthesis`.
 - `GET /overlay`: one HTML page receiving SSE events, showing the speaker name

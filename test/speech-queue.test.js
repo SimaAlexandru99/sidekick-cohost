@@ -124,3 +124,26 @@ test('ElevenLabs bytes flow through the queue to playback unchanged', async t =>
   assert.deepEqual(spoken[0].audio, audio);
   assert.equal(spoken[0].text, 'Salut, bun venit!');
 });
+
+test('disconnected output pauses synthesis and resumes in priority order', async t => {
+  let connected = false;
+  let calls = 0;
+  const { queue, spoken } = setup(t, { canPlay: () => connected,
+    synthesize: async () => { calls++; return null; } });
+  queue.enqueue(item('follow'));
+  queue.enqueue(item('raid'));
+  await flush();
+  assert.equal(calls, 0);
+  assert.equal(queue.isIdle(), false);
+  connected = true;
+  queue.resume();
+  await flush();
+  assert.equal(spoken[0].type, 'raid');
+  connected = false;
+  await next(t);
+  assert.equal(calls, 1);
+  connected = true;
+  queue.resume();
+  await flush();
+  assert.equal(spoken[1].type, 'follow');
+});
