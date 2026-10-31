@@ -54,8 +54,9 @@ export function createTwitchClient(env, fetcher = fetch) {
         auth.login?.toLowerCase() !== env.TWITCH_CHANNEL_LOGIN.toLowerCase()) {
       throw new Error('Token must belong to the configured app and broadcaster account');
     }
-    if (!['user:read:chat', 'user:write:chat', 'user:bot'].every(scope => auth.scopes?.includes(scope))) {
-      throw new Error('Token is missing required chat scopes');
+    if (!['user:read:chat', 'user:write:chat', 'user:bot', 'moderator:read:followers',
+      'channel:read:subscriptions'].every(scope => auth.scopes?.includes(scope))) {
+      throw new Error('Token is missing required Twitch scopes');
     }
     userId = auth.user_id;
     return userId;
@@ -67,13 +68,29 @@ export function createTwitchClient(env, fetcher = fetch) {
 
   return {
     validate,
-    subscribeChat(sessionId) {
+    async subscribeEvents(sessionId, { mock = false } = {}) {
       requireIdentity();
-      return request(`${HELIX}/eventsub/subscriptions`, { method: 'POST', body: JSON.stringify({
-        type: 'channel.chat.message', version: '1',
-        condition: { broadcaster_user_id: userId, user_id: userId },
-        transport: { method: 'websocket', session_id: sessionId },
-      }) });
+      const subscriptions = [
+        { type: 'channel.follow', version: '2',
+          condition: { broadcaster_user_id: userId, moderator_user_id: userId } },
+        { type: 'channel.subscribe', version: '1', condition: { broadcaster_user_id: userId } },
+        { type: 'channel.subscription.message', version: '1', condition: { broadcaster_user_id: userId } },
+        { type: 'channel.raid', version: '1', condition: { to_broadcaster_user_id: userId } },
+      ];
+      if (!mock) subscriptions.unshift({ type: 'channel.chat.message', version: '1',
+        condition: { broadcaster_user_id: userId, user_id: userId } });
+      await Promise.all(subscriptions.map(async subscription => {
+        const options = { method: 'POST', body: JSON.stringify({ ...subscription,
+          transport: { method: 'websocket', session_id: sessionId } }) };
+        if (!mock) return request(`${HELIX}/eventsub/subscriptions`, options);
+        const response = await fetcher('http://localhost:8080/eventsub/subscriptions', {
+          // Twitch CLI requires a Client-Id header, but never needs real credentials.
+          ...options, headers: { 'Content-Type': 'application/json', 'Client-Id': 'sidekick-mock' },
+          signal: AbortSignal.timeout(10000), redirect: 'error',
+        });
+        if (response.status !== 202) throw new Error(`Mock subscription failed (${response.status})`);
+        return readJson(response);
+      }));
     },
     async sendChatMessage(text) {
       requireIdentity();

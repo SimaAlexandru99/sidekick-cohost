@@ -5,18 +5,21 @@ import { createTts } from './tts.js';
 import { createSpeechQueue } from './speech-queue.js';
 import { startOverlay } from './overlay.js';
 import { createHighlights } from './highlights.js';
+import { createLiveEvents } from './live-events.js';
 
 let stop;
 let validationTimer;
 let highlightTimer;
 let overlay;
 let queue;
+let liveEvents;
 let shuttingDown = false;
 function shutdown() {
   shuttingDown = true;
   clearInterval(validationTimer);
   clearInterval(highlightTimer);
   stop?.();
+  liveEvents?.stop();
   queue?.stop();
   void overlay?.close();
 }
@@ -38,8 +41,10 @@ try {
   queue = createSpeechQueue({ synthesize: createTts(process.env),
     play: overlay.play, canPlay: overlay.isConnected });
   const highlights = createHighlights(queue);
+  liveEvents = createLiveEvents(queue);
   highlightTimer = setInterval(() => highlights.tick(), 1000);
-  stop = startEventSub({ client, userId,
+  stop = startEventSub({ client, userId, mockUrl: process.env.EVENTSUB_MOCK_URL?.trim(),
+    onEvent: liveEvents.handle,
     onRevoked: () => { shutdown(); process.exitCode = 1; }, onChat: async event => {
     if (!acceptChat(event.chatter_user_id, event.message.text)) return;
     console.log(JSON.stringify({ name: event.chatter_user_name, text: event.message.text }));

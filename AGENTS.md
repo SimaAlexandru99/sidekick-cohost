@@ -50,6 +50,10 @@ only when their slice needs them; ElevenLabs is always optional.
 - When `EVENTSUB_MOCK_URL` is set (typically `ws://127.0.0.1:8080/ws`), open a
   second connection. Subscribe mock follow/sub/raid events through
   `http://localhost:8080/eventsub/subscriptions`. Both sources use the same handler.
+- Mock URLs must use loopback hosts. Never send Twitch credentials to mock HTTP;
+  the CLI requires a `Client-Id` header, so use the literal `sidekick-mock`.
+  Each connection has independent keepalive/retry/revocation and bounded deduplication;
+  a mock failure does not stop the real connection. Validate the target channel on notifications.
 
 ## Behavior
 
@@ -68,6 +72,11 @@ only when their slice needs them; ElevenLabs is always optional.
   every 90 seconds, only when the queue is empty. Read verbatim in the original language.
 - Follow/sub/raid announcements are spoken only. Batch follows in the same window:
   "Welcome A, B and C". Welcome each raid in a single sentence.
+- Slice 4 uses a fixed five-second follow window starting with the first follow;
+  split long batches into lines of at most 150 Unicode code points. Live events have
+  their own ten-second per-user cooldown, separate from chat. Validate display names
+  as 1–25 Unicode letters/digits/underscores and apply the shared text filters.
+  Subscription messages produce a resub welcome, not a reading of their free text.
 - Generated lines are English. Read Romanian/English chat as-is.
 
 ## Speech and overlay
