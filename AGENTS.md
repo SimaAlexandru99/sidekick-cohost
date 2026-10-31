@@ -128,3 +128,8 @@ keepalive expiry, and reconnect without duplicate subscriptions using simulated
 transports. Run affected checks and report commands with exit codes. Verify ignore
 rules and staged changes before commits. Live Twitch checks need credentials and
 a second account; explicitly report when they were not run.
+
+- Slice 5 uses OpenAI Responses with `store: false`, English refusal instructions,
+  one sentence for `!ask`, and up to two for `!recap`. Recap keeps filtered
+  highlights and live-event names/types in memory for 15 minutes; `!recap` has
+  a 60-second cooldown. OpenAI answers are spoken and posted to Twitch.

@@ -6,6 +6,10 @@ import { createSpeechQueue } from './speech-queue.js';
 import { startOverlay } from './overlay.js';
 import { createHighlights } from './highlights.js';
 import { createLiveEvents } from './live-events.js';
+import { createOpenAI } from './openai.js';
+import { createRecap } from './recap.js';
+import { createCommands } from './commands.js';
+import { isHighlight } from './highlights.js';
 
 let stop;
 let validationTimer;
@@ -13,6 +17,8 @@ let highlightTimer;
 let overlay;
 let queue;
 let liveEvents;
+let commands;
+let recap;
 let shuttingDown = false;
 function shutdown() {
   shuttingDown = true;
@@ -20,6 +26,7 @@ function shutdown() {
   clearInterval(highlightTimer);
   stop?.();
   liveEvents?.stop();
+  recap?.stop?.();
   queue?.stop();
   void overlay?.close();
 }
@@ -41,13 +48,20 @@ try {
   queue = createSpeechQueue({ synthesize: createTts(process.env),
     play: overlay.play, canPlay: overlay.isConnected });
   const highlights = createHighlights(queue);
+  recap = createRecap();
+  commands = createCommands({ openai: createOpenAI(process.env), queue, recap,
+    sendChatMessage: text => client.sendChatMessage(text) });
   liveEvents = createLiveEvents(queue);
   highlightTimer = setInterval(() => highlights.tick(), 1000);
   stop = startEventSub({ client, userId, mockUrl: process.env.EVENTSUB_MOCK_URL?.trim(),
-    onEvent: liveEvents.handle,
+    onEvent: (type, event) => { liveEvents.handle(type, event);
+      recap.record(type, `${event.user_name ?? event.from_broadcaster_user_name}: ${type}`); },
     onRevoked: () => { shutdown(); process.exitCode = 1; }, onChat: async event => {
     if (!acceptChat(event.chatter_user_id, event.message.text)) return;
     console.log(JSON.stringify({ name: event.chatter_user_name, text: event.message.text }));
+    const text = event.message.text;
+    if (await commands(event.chatter_user_name, text)) return;
+    if (isHighlight(text)) recap.record('highlight', `${event.chatter_user_name}: ${text}`);
     highlights.consider(event);
     if (event.message.text.trim() === 'HeyGuys') {
       try { await client.sendChatMessage('VoHiYo'); }
