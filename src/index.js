@@ -1,5 +1,6 @@
 import { createTwitchClient } from './twitch.js';
 import { startEventSub } from './eventsub.js';
+import { createChatFilter } from './filters.js';
 
 let stop;
 let validationTimer;
@@ -15,9 +16,11 @@ process.once('SIGTERM', shutdown);
 try {
   const client = createTwitchClient(process.env);
   const userId = await client.validate();
+  const acceptChat = createChatFilter();
   if (shuttingDown) process.exit(0);
   stop = startEventSub({ client, userId,
     onRevoked: () => { shutdown(); process.exitCode = 1; }, onChat: async event => {
+    if (!acceptChat(event.chatter_user_id, event.message.text)) return;
     console.log(JSON.stringify({ name: event.chatter_user_name, text: event.message.text }));
     if (event.message.text.trim() === 'HeyGuys') {
       try { await client.sendChatMessage('VoHiYo'); }

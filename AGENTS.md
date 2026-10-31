@@ -55,6 +55,9 @@ only when their slice needs them; ElevenLabs is always optional.
 
 - Ignore messages from the bot itself. Before speaking, apply a blocklist, reject
   links, enforce a 150-character limit and a per-user cooldown.
+- Slice 2 defaults: 10-second per-user cooldown on accepted chat, no cooldown for
+  rejected text. Count Unicode code points; preserve original text. The local RO/EN
+  blocklist is lexical, not comprehensive moderation; reject control/format characters.
 - `!ask <q>`: OpenAI answers in one sentence and refuses toxic questions. Speak
   the answer and post it with `POST /helix/chat/messages`.
 - `!recap`: keep an in-memory log of events and highlights from the last 15 minutes.
@@ -72,6 +75,14 @@ only when their slice needs them; ElevenLabs is always optional.
 - Queue priority: raid > sub > ask/recap > follow > highlight.
 - One utterance at a time, minimum 8-second gap. Maximum five queued items;
   when full, drop the lowest priority first.
+- Five means pending items, excluding the active utterance. Equal priorities are
+  FIFO; overflow drops the newest item at the lowest priority. Do not preempt speech.
+  Wait for playback completion, then the 8-second gap. Synthesis/playback failures
+  skip the item and keep the gap; never log provider response bodies or retry paid TTS.
+- `createSpeechQueue({ synthesize, play })` accepts `{ type, name, text }` items.
+  `createTts(env)` returns MP3 bytes, or `null` without a key. `play(item, signal)`
+  must resolve on actual playback completion and honor shutdown cancellation.
+  Slice 3 supplies this playback consumer; slice 2 does not play audio in the terminal.
 - ElevenLabs: `POST /v1/text-to-speech/{voice_id}`, configured `model_id`, MP3 output.
   Without its API key, send text only; the overlay uses browser `speechSynthesis`.
 - `GET /overlay`: one HTML page receiving SSE events, showing the speaker name
