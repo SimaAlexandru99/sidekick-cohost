@@ -1,0 +1,13 @@
+{
+  "name": "sidekick-cohost",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": { "ws": "^8.18.0" }
+}
